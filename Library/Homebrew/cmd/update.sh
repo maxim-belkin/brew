@@ -1,4 +1,4 @@
-#:  * `update` [`--merge`] [`--force`]:
+#:  * `update` [`--merge`] [`--force`] [`--skip`]:
 #:    Fetch the newest version of Homebrew and all formulae from GitHub using
 #:    `git`(1) and perform any necessary migrations.
 #:
@@ -7,6 +7,8 @@
 #:
 #:    If `--force` (or `-f`) is specified then always do a slower, full update check even
 #:    if unnecessary.
+#:
+#:    If `--skip` <user>`/`<repo> is specified then do not update formulae in that repo
 
 # Don't need shellcheck to follow this `source`.
 # shellcheck disable=SC1090
@@ -98,6 +100,20 @@ rename_taps_dir_if_necessary() {
       echo "So you may need to rename it to $HOMEBREW_LIBRARY/Taps/<someuser>/homebrew-<sometap> manually." >&2
     fi
   done
+}
+
+repo() {
+  local repo
+
+  repo="$1"
+  if [[ "$repo" = "$HOMEBREW_REPOSITORY" ]]
+  then
+    repo="brew"
+  else
+    repo="${repo#"$HOMEBREW_LIBRARY/Taps/"}"
+    repo="${repo//\/*-/\/}"
+  fi
+  echo "$repo"
 }
 
 repo_var() {
@@ -317,6 +333,7 @@ homebrew-update() {
   local option
   local DIR
   local UPSTREAM_BRANCH
+  local SKIP_TAPS SKIP_MODE
 
   for option in "$@"
   do
@@ -328,16 +345,37 @@ homebrew-update() {
       --force)                        HOMEBREW_UPDATE_FORCE=1 ;;
       --simulate-from-current-branch) HOMEBREW_SIMULATE_FROM_CURRENT_BRANCH=1 ;;
       --preinstall)                   export HOMEBREW_UPDATE_PREINSTALL=1 ;;
+      --skip)                         SKIP_MODE=1 ;;
       --*)                            ;;
       -*)
         [[ "$option" = *v* ]] && HOMEBREW_VERBOSE=1
         [[ "$option" = *d* ]] && HOMEBREW_DEBUG=1
         ;;
       *)
+        if [[ -n "$SKIP_MODE" ]]
+        then
+          if [[ "$option" =~ ^[^/]*/.*$ || "$option" = brew ]]
+          then
+            SKIP_TAPS+=("$option")
+          else
+            if [[ -z "$SKIP_TAPS" ]]
+            then
+              odie <<EOS
+You've specified incorrect tap to skip: $option.
+Taps to skip can be either in the form 'user/repo' or 'brew'
+EOS
+            else
+              SKIP_MODE=
+            fi
+          fi
+        fi
+        if [[ -z "$SKIP_MODE" ]]
+        then
         odie <<EOS
 This command updates brew itself, and does not take formula names.
 Use 'brew upgrade $@' instead.
 EOS
+        fi
         ;;
     esac
   done
@@ -446,6 +484,16 @@ EOS
     fi
 
     TAP_VAR="$(repo_var "$DIR")"
+    REPO="$(repo "$DIR")"
+
+    for skip_tap in "${SKIP_TAPS[@]}"
+    do
+      if [[ x"$skip_tap" = x"$REPO" || ( "$skip_tap" = brew && -z "$REPO" ) ]]
+      then
+        echo "  Skipping $skip_tap..."
+        continue
+      fi
+    done
     UPSTREAM_BRANCH_DIR="$(upstream_branch)"
     declare UPSTREAM_BRANCH"$TAP_VAR"="$UPSTREAM_BRANCH_DIR"
     declare PREFETCH_REVISION"$TAP_VAR"="$(git rev-parse -q --verify refs/remotes/origin/"$UPSTREAM_BRANCH_DIR")"
