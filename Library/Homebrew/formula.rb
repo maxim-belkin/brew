@@ -1137,10 +1137,10 @@ class Formula
     end
   end
 
-  # Whether this {Formula} is allowed to have broken linkage.
+  # Whether this {Formula} is allowed to have a broken linkage to specified library.
   # Defaults to false.
   # @return [Boolean]
-  def allow_missing_libs?
+  def allowed_missing_lib?(lib)
     false
   end
 
@@ -2624,10 +2624,6 @@ class Formula
     # @private
     def skip_clean_paths
       @skip_clean_paths ||= Set.new
-    end
-
-    def allow_missing_libs
-      define_method(:allow_missing_libs?) { true }
     end
 
     # Software that will not be symlinked into the `brew --prefix` will only
